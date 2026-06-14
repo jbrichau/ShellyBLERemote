@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shelly Remote</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --surface2: #334155;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --border: #475569;
+      --green: #22c55e;
+      --green-bg: #166534;
+      --green-text: #86efac;
+      --red-bg: #7f1d1d;
+      --red-text: #fca5a5;
+      --red-border: #dc2626;
+      --amber-bg: #78350f;
+      --amber-text: #fcd34d;
+      --amber-border: #d97706;
+      --radius: 12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .container { width: 100%; max-width: 440px; }
+
+    .header {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+
+    .header h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .header p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 14px;
+    }
+
+    .card-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-muted);
+      margin-bottom: 14px;
+    }
+
+    /* Connection row */
+    .conn-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--border);
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    .dot.connected   { background: var(--green); }
+    .dot.connecting  { background: #f59e0b; animation: blink 0.8s infinite; }
+
+    @keyframes blink { 50% { opacity: 0.25; } }
+
+    .conn-label { flex: 1; font-size: 0.9rem; }
+    .device-sub { font-size: 0.78rem; color: var(--text-muted); margin-top: 6px; }
+
+    /* Buttons */
+    button {
+      border: none;
+      border-radius: 8px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: filter 0.15s, opacity 0.15s;
+      padding: 9px 16px;
+      font-family: inherit;
+    }
+
+    button:disabled { opacity: 0.35; cursor: not-allowed; }
+    button:not(:disabled):hover { filter: brightness(1.15); }
+    button:not(:disabled):active { filter: brightness(0.9); }
+
+    .btn-blue   { background: var(--primary); color: #fff; }
+    .btn-green  { background: var(--green-bg);  color: var(--green-text);  border: 1px solid #16a34a; }
+    .btn-red    { background: var(--red-bg);    color: var(--red-text);    border: 1px solid var(--red-border); }
+    .btn-amber  { background: var(--amber-bg);  color: var(--amber-text);  border: 1px solid var(--amber-border); }
+    .btn-ghost  { background: var(--surface2);  color: var(--text);        border: 1px solid var(--border); }
+
+    /* State rows */
+    .state-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 13px 14px;
+      background: var(--surface2);
+      border-radius: 8px;
+      margin-bottom: 10px;
+    }
+    .state-row:last-of-type { margin-bottom: 0; }
+
+    .state-name { font-size: 0.875rem; color: var(--text-muted); }
+
+    .badge {
+      padding: 3px 12px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .badge.on       { background: var(--green-bg);  color: var(--green-text); }
+    .badge.off      { background: var(--surface);   color: var(--border);     border: 1px solid var(--border); }
+    .badge.unknown  { background: var(--surface);   color: var(--border);     border: 1px solid var(--border); }
+
+    .refresh-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    .refresh-row label { font-size: 0.82rem; color: var(--text-muted); cursor: pointer; }
+    input[type="checkbox"] { width: 15px; height: 15px; cursor: pointer; accent-color: var(--primary); }
+
+    /* Controls grid */
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .controls .full { grid-column: 1 / -1; }
+
+    /* Log */
+    .log-box {
+      background: #070d19;
+      border-radius: 8px;
+      padding: 12px;
+      max-height: 150px;
+      overflow-y: auto;
+      font-family: 'SF Mono', 'Fira Code', 'Menlo', monospace;
+      font-size: 0.72rem;
+      line-height: 1.65;
+    }
+    .log-box p { margin: 0; }
+    .log-box .info    { color: #60a5fa; }
+    .log-box .success { color: var(--green-text); }
+    .log-box .error   { color: var(--red-text); }
+    .log-box .warn    { color: var(--amber-text); }
+
+    .footer-note {
+      text-align: center;
+      font-size: 0.72rem;
+      color: #475569;
+      margin-top: 14px;
+    }
+
+    /* Lock button */
+    .btn-lock {
+      background: var(--surface2);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      font-size: 0.78rem;
+      padding: 6px 12px;
+    }
+    .btn-lock.lock-on {
+      color: var(--green-text);
+      border-color: #16a34a;
+      background: var(--green-bg);
+    }
+
+    /* Password modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .modal-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      width: 100%;
+      max-width: 340px;
+    }
+    .modal-box h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .modal-box p {
+      font-size: 0.83rem;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+    .modal-box input[type="password"] {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 0.95rem;
+      padding: 10px 12px;
+      margin-bottom: 14px;
+      font-family: inherit;
+      outline: none;
+    }
+    .modal-box input[type="password"]:focus {
+      border-color: var(--primary);
+    }
+    .modal-actions {
+      display: flex;
+      gap: 10px;
+    }
+    .modal-actions button { flex: 1; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <h1>Shelly Remote</h1>
+    <p>Shelly 1 Gen3 &middot; Bluetooth Low Energy</p>
+  </div>
+
+  <!-- Connection -->
+  <div class="card">
+    <div class="card-label">Connection</div>
+    <div class="conn-row">
+      <div class="dot" id="dot"></div>
+      <span class="conn-label" id="connLabel">Not connected</span>
+      <button class="btn-lock" id="lockBtn" onclick="openPasswordModal()">Set Auth</button>
+      <button class="btn-blue" id="connectBtn" onclick="toggleConnect()">Connect</button>
+    </div>
+    <div class="device-sub" id="deviceSub"></div>
+  </div>
+
+  <!-- Status -->
+  <div class="card" id="statusCard" style="display:none">
+    <div class="card-label">Status</div>
+    <div class="state-row">
+      <span class="state-name">Relay output</span>
+      <span class="badge unknown" id="outputBadge">—</span>
+    </div>
+    <div class="state-row">
+      <span class="state-name">Button input</span>
+      <span class="badge unknown" id="inputBadge">—</span>
+    </div>
+    <div class="refresh-row">
+      <input type="checkbox" id="autoRefresh" onchange="toggleAutoRefresh()">
+      <label for="autoRefresh">Auto-refresh every 2 s</label>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="card" id="controlCard" style="display:none">
+    <div class="card-label">Control</div>
+    <div class="controls">
+      <button class="btn-green" onclick="setSwitch(true)">Turn ON</button>
+      <button class="btn-red"   onclick="setSwitch(false)">Turn OFF</button>
+      <button class="btn-amber full" onclick="toggleSwitch()">Toggle</button>
+      <button class="btn-ghost full" onclick="refreshStatus()">Refresh status</button>
+      <button class="btn-ghost full" onclick="setDevicePassword()">Set device password</button>
+    </div>
+  </div>
+
+  <!-- Log -->
+  <div class="card">
+    <div class="card-label">Activity log</div>
+    <div class="log-box" id="logBox"></div>
+  </div>
+
+  <p class="footer-note">Shelly Remote &bull; Powered by Capacitor</p>
+
+</div>
+
+<!-- Password modal -->
+<div class="modal-overlay" id="pwdModal">
+  <div class="modal-box">
+    <h3>Authentication</h3>
+    <p id="pwdMessage">Enter device password:</p>
+    <input type="password" id="pwdInput" placeholder="Password" autocomplete="current-password">
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="cancelPassword()">Cancel</button>
+      <button class="btn-blue"  onclick="submitPassword()">OK</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

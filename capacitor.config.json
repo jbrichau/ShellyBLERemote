@@ -1,0 +1,15 @@
+{
+  "appId": "be.brichau.shellyremote",
+  "appName": "Shelly Remote",
+  "webDir": "dist",
+  "plugins": {
+    "BluetoothLe": {
+      "displayStrings": {
+        "scanning": "Looking for Shelly devices…",
+        "cancel": "Cancel",
+        "availableDevices": "Nearby Shelly devices",
+        "noDeviceFound": "No Shelly device found"
+      }
+    }
+  }
+}
