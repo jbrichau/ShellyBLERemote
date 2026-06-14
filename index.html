@@ -2,236 +2,297 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Shelly Remote</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Garage</title>
   <style>
     :root {
-      --bg: #0f172a;
-      --surface: #1e293b;
-      --surface2: #334155;
-      --primary: #3b82f6;
-      --primary-hover: #2563eb;
-      --text: #f1f5f9;
-      --text-muted: #94a3b8;
-      --border: #475569;
-      --green: #22c55e;
-      --green-bg: #166534;
-      --green-text: #86efac;
-      --red-bg: #7f1d1d;
-      --red-text: #fca5a5;
-      --red-border: #dc2626;
-      --amber-bg: #78350f;
-      --amber-text: #fcd34d;
-      --amber-border: #d97706;
-      --radius: 12px;
+      --bg: #08111f;
+      --surface: #0f1e30;
+      --border: #1e3a5f;
+      --text: #e2e8f0;
+      --muted: #64748b;
     }
 
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+    html, body { height: 100%; overflow: hidden; }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
       background: var(--bg);
       color: var(--text);
-      min-height: 100vh;
+    }
+
+    /* ── App layout ─────────────────────────────────────────────────────── */
+    .app {
+      height: 100%;
+      height: 100dvh;
       display: flex;
+      flex-direction: column;
+      padding-top: env(safe-area-inset-top, 0px);
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+
+    /* ── Garage button ──────────────────────────────────────────────────── */
+    .btn-wrap {
+      flex: 1;
+      padding: 24px 24px 12px;
+      min-height: 0;
+    }
+
+    .garage-btn {
+      width: 100%;
+      height: 100%;
+      border-radius: 28px;
+      border: 2px solid var(--c-border);
+      background: var(--c-bg);
+      box-shadow: 0 0 60px var(--c-glow), inset 0 1px 0 rgba(255,255,255,0.04);
+      display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
-      padding: 20px;
-    }
-
-    .container { width: 100%; max-width: 440px; }
-
-    .header {
-      text-align: center;
-      margin-bottom: 28px;
-    }
-
-    .header h1 {
-      font-size: 1.6rem;
-      font-weight: 700;
-      margin-bottom: 4px;
-    }
-
-    .header p {
-      font-size: 0.85rem;
-      color: var(--text-muted);
-    }
-
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 20px;
-      margin-bottom: 14px;
-    }
-
-    .card-label {
-      font-size: 0.7rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: var(--text-muted);
-      margin-bottom: 14px;
-    }
-
-    /* Connection row */
-    .conn-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: var(--border);
-      flex-shrink: 0;
-      transition: background 0.3s;
-    }
-    .dot.connected   { background: var(--green); }
-    .dot.connecting  { background: #f59e0b; animation: blink 0.8s infinite; }
-
-    @keyframes blink { 50% { opacity: 0.25; } }
-
-    .conn-label { flex: 1; font-size: 0.9rem; }
-    .device-sub { font-size: 0.78rem; color: var(--text-muted); margin-top: 6px; }
-
-    /* Buttons */
-    button {
-      border: none;
-      border-radius: 8px;
-      font-size: 0.88rem;
-      font-weight: 600;
+      gap: 28px;
       cursor: pointer;
-      transition: filter 0.15s, opacity 0.15s;
-      padding: 9px 16px;
+      transition: border-color 0.35s, box-shadow 0.35s, background 0.35s, transform 0.1s;
+      -webkit-user-select: none;
+      user-select: none;
       font-family: inherit;
     }
 
-    button:disabled { opacity: 0.35; cursor: not-allowed; }
-    button:not(:disabled):hover { filter: brightness(1.15); }
-    button:not(:disabled):active { filter: brightness(0.9); }
+    .garage-btn.disconnected {
+      --c-border: #1a3050;
+      --c-bg:     #0a1825;
+      --c-glow:   transparent;
+      --c-icon:   #263d56;
+      --c-label:  #3d5a78;
+    }
+    .garage-btn.connecting {
+      --c-border: #f59e0b;
+      --c-bg:     #0a1825;
+      --c-glow:   rgba(245,158,11,0.15);
+      --c-icon:   #f59e0b;
+      --c-label:  #fcd34d;
+      animation: pulse-glow 1.2s ease-in-out infinite;
+    }
+    .garage-btn.connected {
+      --c-border: #22c55e;
+      --c-bg:     #081a10;
+      --c-glow:   rgba(34,197,94,0.18);
+      --c-icon:   #22c55e;
+      --c-label:  #e2e8f0;
+    }
+    .garage-btn.triggered {
+      --c-bg:   #0f3020;
+      --c-glow: rgba(34,197,94,0.45);
+      transform: scale(0.975);
+    }
+    .garage-btn:active:not(.disconnected):not(.connecting) {
+      transform: scale(0.97);
+    }
 
-    .btn-blue   { background: var(--primary); color: #fff; }
-    .btn-green  { background: var(--green-bg);  color: var(--green-text);  border: 1px solid #16a34a; }
-    .btn-red    { background: var(--red-bg);    color: var(--red-text);    border: 1px solid var(--red-border); }
-    .btn-amber  { background: var(--amber-bg);  color: var(--amber-text);  border: 1px solid var(--amber-border); }
-    .btn-ghost  { background: var(--surface2);  color: var(--text);        border: 1px solid var(--border); }
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 50px rgba(245,158,11,0.12); }
+      50%       { box-shadow: 0 0 90px rgba(245,158,11,0.32); }
+    }
 
-    /* State rows */
-    .state-row {
+    .garage-icon {
+      color: var(--c-icon);
+      transition: color 0.35s;
+      width: min(30vw, 120px);
+      height: min(30vw, 120px);
+    }
+    .garage-icon svg { width: 100%; height: 100%; display: block; }
+
+    .btn-label {
+      font-size: clamp(0.95rem, 3.5vw, 1.15rem);
+      font-weight: 500;
+      color: var(--c-label);
+      letter-spacing: 0.03em;
+      transition: color 0.35s;
+      text-align: center;
+    }
+
+    /* ── Bottom bar ─────────────────────────────────────────────────────── */
+    .bottom-bar {
+      height: 60px;
+      padding: 0 20px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 13px 14px;
-      background: var(--surface2);
-      border-radius: 8px;
-      margin-bottom: 10px;
+      border-top: 1px solid #0d1b2a;
     }
-    .state-row:last-of-type { margin-bottom: 0; }
 
-    .state-name { font-size: 0.875rem; color: var(--text-muted); }
-
-    .badge {
-      padding: 3px 12px;
-      border-radius: 20px;
-      font-size: 0.75rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
+    .device-label {
+      font-size: 0.78rem;
+      color: var(--muted);
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      padding-right: 8px;
     }
-    .badge.on       { background: var(--green-bg);  color: var(--green-text); }
-    .badge.off      { background: var(--surface);   color: var(--border);     border: 1px solid var(--border); }
-    .badge.unknown  { background: var(--surface);   color: var(--border);     border: 1px solid var(--border); }
 
-    .refresh-row {
+    .cog-btn {
+      width: 44px;
+      height: 44px;
+      flex-shrink: 0;
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
       display: flex;
       align-items: center;
-      gap: 8px;
-      margin-top: 14px;
+      justify-content: center;
+      border-radius: 50%;
+      transition: color 0.2s, background 0.2s;
     }
-    .refresh-row label { font-size: 0.82rem; color: var(--text-muted); cursor: pointer; }
-    input[type="checkbox"] { width: 15px; height: 15px; cursor: pointer; accent-color: var(--primary); }
+    .cog-btn:active { color: var(--text); background: #132032; }
+    .cog-btn svg { width: 22px; height: 22px; }
 
-    /* Controls grid */
-    .controls {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
+    /* ── Settings sheet ─────────────────────────────────────────────────── */
+    .sheet-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.55);
+      z-index: 50;
+      align-items: flex-end;
     }
-    .controls .full { grid-column: 1 / -1; }
+    .sheet-overlay.open { display: flex; }
 
-    /* Log */
-    .log-box {
-      background: #070d19;
-      border-radius: 8px;
-      padding: 12px;
-      max-height: 150px;
+    .sheet {
+      background: #0d1e32;
+      border-top: 1px solid var(--border);
+      border-radius: 20px 20px 0 0;
+      width: 100%;
+      max-height: 82vh;
       overflow-y: auto;
-      font-family: 'SF Mono', 'Fira Code', 'Menlo', monospace;
-      font-size: 0.72rem;
+      padding-bottom: max(env(safe-area-inset-bottom, 0px), 16px);
+    }
+
+    .sheet-handle {
+      width: 36px; height: 4px;
+      background: #2a4060;
+      border-radius: 2px;
+      margin: 14px auto 0;
+    }
+
+    .sheet-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+      border-bottom: 1px solid #132032;
+    }
+    .sheet-header h2 { font-size: 1rem; font-weight: 600; }
+    .sheet-close {
+      width: 28px; height: 28px;
+      background: #1e3a5f;
+      border: none;
+      color: var(--text);
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .sheet-section {
+      padding: 18px 20px;
+      border-bottom: 1px solid #0a1522;
+    }
+    .sheet-section-title {
+      font-size: 0.68rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+    .sheet-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .sheet-row-label { font-size: 0.9rem; }
+    .sheet-row-value { font-size: 0.85rem; color: var(--muted); }
+
+    .sheet-btn {
+      display: block;
+      width: 100%;
+      margin-top: 8px;
+      padding: 11px;
+      background: #132a45;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-size: 0.88rem;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: inherit;
+      text-align: center;
+      transition: filter 0.15s;
+    }
+    .sheet-btn:active { filter: brightness(1.3); }
+    .sheet-btn.danger { background: #2a0f0f; border-color: #5a1a1a; color: #fca5a5; }
+
+    .log-toggle {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 0.68rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      cursor: pointer;
+      font-family: inherit;
+      padding: 0;
+    }
+    .log-box {
+      display: none;
+      background: #040d18;
+      border-radius: 8px;
+      padding: 10px;
+      margin-top: 10px;
+      max-height: 180px;
+      overflow-y: auto;
+      font-family: 'SF Mono', 'Menlo', monospace;
+      font-size: 0.68rem;
       line-height: 1.65;
     }
+    .log-box.visible { display: block; }
     .log-box p { margin: 0; }
     .log-box .info    { color: #60a5fa; }
-    .log-box .success { color: var(--green-text); }
-    .log-box .error   { color: var(--red-text); }
-    .log-box .warn    { color: var(--amber-text); }
+    .log-box .success { color: #86efac; }
+    .log-box .error   { color: #fca5a5; }
+    .log-box .warn    { color: #fcd34d; }
 
-    .footer-note {
-      text-align: center;
-      font-size: 0.72rem;
-      color: #475569;
-      margin-top: 14px;
-    }
-
-    /* Lock button */
-    .btn-lock {
-      background: var(--surface2);
-      color: var(--text-muted);
-      border: 1px solid var(--border);
-      font-size: 0.78rem;
-      padding: 6px 12px;
-    }
-    .btn-lock.lock-on {
-      color: var(--green-text);
-      border-color: #16a34a;
-      background: var(--green-bg);
-    }
-
-    /* Password modal */
+    /* ── Password modal ─────────────────────────────────────────────────── */
     .modal-overlay {
       display: none;
       position: fixed;
       inset: 0;
-      background: rgba(0,0,0,0.6);
+      background: rgba(0,0,0,0.7);
       z-index: 100;
       align-items: center;
       justify-content: center;
       padding: 24px;
     }
     .modal-box {
-      background: var(--surface);
+      background: #0d1e32;
       border: 1px solid var(--border);
-      border-radius: var(--radius);
+      border-radius: 16px;
       padding: 24px;
       width: 100%;
       max-width: 340px;
     }
-    .modal-box h3 {
-      font-size: 1rem;
-      font-weight: 700;
-      margin-bottom: 6px;
-    }
-    .modal-box p {
-      font-size: 0.83rem;
-      color: var(--text-muted);
-      margin-bottom: 16px;
-    }
+    .modal-box h3 { font-size: 1rem; font-weight: 600; margin-bottom: 6px; }
+    .modal-box p  { font-size: 0.83rem; color: var(--muted); margin-bottom: 16px; }
     .modal-box input[type="password"] {
       width: 100%;
-      background: var(--surface2);
+      background: #07111e;
       border: 1px solid var(--border);
       border-radius: 8px;
       color: var(--text);
@@ -241,84 +302,104 @@
       font-family: inherit;
       outline: none;
     }
-    .modal-box input[type="password"]:focus {
-      border-color: var(--primary);
+    .modal-box input:focus { border-color: #3b82f6; }
+    .modal-actions { display: flex; gap: 10px; }
+    .modal-actions button {
+      flex: 1; padding: 10px;
+      border-radius: 8px;
+      font-size: 0.88rem; font-weight: 600;
+      cursor: pointer; border: none;
+      font-family: inherit;
     }
-    .modal-actions {
-      display: flex;
-      gap: 10px;
-    }
-    .modal-actions button { flex: 1; }
+    .btn-cancel { background: #1e3a5f; color: var(--text); }
+    .btn-ok     { background: #3b82f6; color: #fff; }
   </style>
 </head>
 <body>
-<div class="container">
 
-  <div class="header">
-    <h1>Shelly Remote</h1>
-    <p>Shelly 1 Gen3 &middot; Bluetooth Low Energy</p>
+<div class="app">
+
+  <div class="btn-wrap">
+    <button class="garage-btn disconnected" id="garageBtn" onclick="handleGarageBtn()">
+      <div class="garage-icon">
+        <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <polyline points="3,40 50,8 97,40"
+            stroke="currentColor" stroke-width="5"
+            stroke-linejoin="round" stroke-linecap="round"/>
+          <rect x="12" y="38" width="76" height="54" rx="3"
+            stroke="currentColor" stroke-width="5"/>
+          <line x1="12" y1="54" x2="88" y2="54"
+            stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
+          <line x1="12" y1="69" x2="88" y2="69"
+            stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
+          <line x1="12" y1="84" x2="88" y2="84"
+            stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
+          <line x1="50" y1="38" x2="50" y2="92"
+            stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="btn-label" id="btnLabel">Tap to pair</div>
+    </button>
   </div>
 
-  <!-- Connection -->
-  <div class="card">
-    <div class="card-label">Connection</div>
-    <div class="conn-row">
-      <div class="dot" id="dot"></div>
-      <span class="conn-label" id="connLabel">Not connected</span>
-      <button class="btn-lock" id="lockBtn" onclick="openPasswordModal()">Set Auth</button>
-      <button class="btn-blue" id="connectBtn" onclick="toggleConnect()">Connect</button>
-    </div>
-    <div class="device-sub" id="deviceSub"></div>
+  <div class="bottom-bar">
+    <span class="device-label" id="deviceLabel"></span>
+    <button class="cog-btn" onclick="openSettings()" aria-label="Settings">
+      <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+        <path d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54A.544.544 0 0 0 13.88 2h-3.76c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.77 8.47c-.12.22-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.76c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6S10.02 8.4 12 8.4s3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+      </svg>
+    </button>
   </div>
 
-  <!-- Status -->
-  <div class="card" id="statusCard" style="display:none">
-    <div class="card-label">Status</div>
-    <div class="state-row">
-      <span class="state-name">Relay output</span>
-      <span class="badge unknown" id="outputBadge">—</span>
+</div>
+
+<!-- Settings sheet -->
+<div class="sheet-overlay" id="settingsPanel" onclick="handleOverlayClick(event)">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <h2>Settings</h2>
+      <button class="sheet-close" onclick="closeSettings()">✕</button>
     </div>
-    <div class="state-row">
-      <span class="state-name">Button input</span>
-      <span class="badge unknown" id="inputBadge">—</span>
+
+    <div class="sheet-section">
+      <div class="sheet-section-title">Device</div>
+      <div class="sheet-row">
+        <span class="sheet-row-label">Paired device</span>
+        <span class="sheet-row-value" id="settingDeviceName">None</span>
+      </div>
+      <button class="sheet-btn" onclick="pairNewDevice()">Pair with a device…</button>
+      <button class="sheet-btn danger" id="forgetDeviceBtn" onclick="forgetDevice()" style="display:none">Forget device</button>
     </div>
-    <div class="refresh-row">
-      <input type="checkbox" id="autoRefresh" onchange="toggleAutoRefresh()">
-      <label for="autoRefresh">Auto-refresh every 2 s</label>
+
+    <div class="sheet-section">
+      <div class="sheet-section-title">Authentication</div>
+      <div class="sheet-row">
+        <span class="sheet-row-label">Saved password</span>
+        <span class="sheet-row-value" id="settingAuthStatus">None</span>
+      </div>
+      <button class="sheet-btn" onclick="changeAppPassword()">Update saved password</button>
+      <button class="sheet-btn" onclick="setDevicePassword()">Change device password…</button>
+    </div>
+
+    <div class="sheet-section">
+      <div class="sheet-section-title">
+        <button class="log-toggle" onclick="toggleLog()">Activity log ▾</button>
+      </div>
+      <div class="log-box" id="logBox"></div>
     </div>
   </div>
-
-  <!-- Controls -->
-  <div class="card" id="controlCard" style="display:none">
-    <div class="card-label">Control</div>
-    <div class="controls">
-      <button class="btn-green" onclick="setSwitch(true)">Turn ON</button>
-      <button class="btn-red"   onclick="setSwitch(false)">Turn OFF</button>
-      <button class="btn-amber full" onclick="toggleSwitch()">Toggle</button>
-      <button class="btn-ghost full" onclick="refreshStatus()">Refresh status</button>
-      <button class="btn-ghost full" onclick="setDevicePassword()">Set device password</button>
-    </div>
-  </div>
-
-  <!-- Log -->
-  <div class="card">
-    <div class="card-label">Activity log</div>
-    <div class="log-box" id="logBox"></div>
-  </div>
-
-  <p class="footer-note">Shelly Remote &bull; Powered by Capacitor</p>
-
 </div>
 
 <!-- Password modal -->
 <div class="modal-overlay" id="pwdModal">
   <div class="modal-box">
     <h3>Authentication</h3>
-    <p id="pwdMessage">Enter device password:</p>
+    <p id="pwdMessage">Enter password:</p>
     <input type="password" id="pwdInput" placeholder="Password" autocomplete="current-password">
     <div class="modal-actions">
-      <button class="btn-ghost" onclick="cancelPassword()">Cancel</button>
-      <button class="btn-blue"  onclick="submitPassword()">OK</button>
+      <button class="btn-cancel" onclick="cancelPassword()">Cancel</button>
+      <button class="btn-ok"     onclick="submitPassword()">OK</button>
     </div>
   </div>
 </div>

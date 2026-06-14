@@ -1,32 +1,255 @@
 import { BleClient } from '@capacitor-community/bluetooth-le';
 import { SecureStoragePlugin } from 'capacitor-secure-storage-plugin';
 
-// ── Shelly Gen2+ BLE RPC UUIDs ──────────────────────────────────────────────
+// ── Shelly BLE RPC UUIDs ─────────────────────────────────────────────────────
 const SVC_UUID    = '5f6d4f53-5f52-5043-5f53-56435f49445f';
 const DATA_UUID   = '5f6d4f53-5f52-5043-5f64-6174615f5f5f';
 const TX_CTL_UUID = '5f6d4f53-5f52-5043-5f74-785f63746c5f';
 const RX_CTL_UUID = '5f6d4f53-5f52-5043-5f72-785f63746c5f';
 
-const CHUNK         = 20;
-const RPC_TIMEOUT   = 10_000;
-const TX_DELAY      = 200;
-const POLL_INTERVAL = 150;
+const CHUNK = 20, RPC_TIMEOUT = 10_000, TX_DELAY = 200, POLL_INTERVAL = 150;
 
 // ── State ────────────────────────────────────────────────────────────────────
 let deviceId       = null;
+let connState      = 'disconnected';
 let nextId         = 1;
 let busy           = false;
-let autoTimer      = null;
 let storedPassword = null;
 let pwdResolve     = null;
 
 const PWD_KEY = 'shelly_device_password';
+const DEV_KEY = 'shelly_device';
+
+// ── Startup ──────────────────────────────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadKeychainPassword();
+
+  const saved = getSavedDevice();
+  if (saved) {
+    updateDeviceLabel(saved.name);
+    await autoConnect(saved);
+  } else {
+    setBtnState('disconnected', 'Tap to pair');
+  }
+
+  document.getElementById('pwdInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') window.submitPassword();
+    if (e.key === 'Escape') window.cancelPassword();
+  });
+});
+
+// ── Device persistence (localStorage) ────────────────────────────────────────
+
+function getSavedDevice() {
+  try { return JSON.parse(localStorage.getItem(DEV_KEY)); } catch { return null; }
+}
+
+function saveDevice(id, name) {
+  localStorage.setItem(DEV_KEY, JSON.stringify({ id, name }));
+}
+
+function clearSavedDevice() {
+  localStorage.removeItem(DEV_KEY);
+}
+
+function updateDeviceLabel(name) {
+  document.getElementById('deviceLabel').textContent = name || '';
+}
+
+// ── BLE connection ────────────────────────────────────────────────────────────
+
+async function autoConnect(saved) {
+  setBtnState('connecting', 'Connecting…');
+  try {
+    await BleClient.initialize();
+    await BleClient.connect(saved.id, onDisconnected);
+    deviceId = saved.id;
+    setBtnState('connected', 'Tap to open · close');
+    log(`Connected to ${saved.name}`, 'success');
+  } catch {
+    log('Auto-connect failed — tap to retry', 'warn');
+    setBtnState('disconnected', 'Tap to connect');
+  }
+}
+
+async function connect() {
+  setBtnState('connecting', 'Scanning…');
+  try {
+    await BleClient.initialize();
+    const device = await BleClient.requestDevice({ namePrefix: 'Shelly' });
+    setBtnState('connecting', 'Connecting…');
+    await BleClient.connect(device.deviceId, onDisconnected);
+    deviceId = device.deviceId;
+    const name = device.name ?? 'Shelly device';
+    saveDevice(deviceId, name);
+    updateDeviceLabel(name);
+    setBtnState('connected', 'Tap to open · close');
+    log(`Connected to ${name}`, 'success');
+  } catch (e) {
+    log(`Connection failed: ${e.message}`, 'error');
+    setBtnState('disconnected', getSavedDevice() ? 'Tap to connect' : 'Tap to pair');
+    deviceId = null;
+  }
+}
+
+async function disconnect() {
+  if (deviceId) {
+    try { await BleClient.disconnect(deviceId); } catch {}
+  }
+  onDisconnected();
+}
+
+function onDisconnected() {
+  deviceId = null;
+  busy     = false;
+  setBtnState('disconnected', getSavedDevice() ? 'Tap to connect' : 'Tap to pair');
+  log('Disconnected', 'warn');
+}
+
+// ── Main button ───────────────────────────────────────────────────────────────
+
+async function handleGarageBtn() {
+  if (connState === 'connecting') return;
+  if (connState === 'connected') {
+    await triggerGarage();
+  } else {
+    await connect();
+  }
+}
+
+async function triggerGarage() {
+  if (busy) return;
+  flashBtn();
+  try {
+    const res = await sendRpc('Switch.Toggle', { id: 0 });
+    if (res.result !== undefined) {
+      log('Triggered', 'success');
+    } else if (res.error) {
+      log(`Error: ${res.error.message}`, 'error');
+    }
+  } catch (e) {
+    log(`Error: ${e.message}`, 'error');
+  }
+}
+
+function flashBtn() {
+  const btn = document.getElementById('garageBtn');
+  btn.classList.add('triggered');
+  setTimeout(() => btn.classList.remove('triggered'), 400);
+}
+
+// ── UI state ──────────────────────────────────────────────────────────────────
+
+function setBtnState(state, label) {
+  connState = state;
+  document.getElementById('garageBtn').className = `garage-btn ${state}`;
+  document.getElementById('btnLabel').textContent = label;
+}
+
+// ── Settings sheet ────────────────────────────────────────────────────────────
+
+function openSettings() {
+  const saved = getSavedDevice();
+  document.getElementById('settingDeviceName').textContent = saved?.name ?? 'None';
+  document.getElementById('forgetDeviceBtn').style.display = saved ? 'block' : 'none';
+  document.getElementById('settingAuthStatus').textContent = storedPassword ? 'Set ✓' : 'None';
+  document.getElementById('settingsPanel').classList.add('open');
+}
+
+function closeSettings() {
+  document.getElementById('settingsPanel').classList.remove('open');
+}
+
+function handleOverlayClick(e) {
+  if (e.target === document.getElementById('settingsPanel')) closeSettings();
+}
+
+function toggleLog() {
+  document.getElementById('logBox').classList.toggle('visible');
+}
+
+async function forgetDevice() {
+  clearSavedDevice();
+  updateDeviceLabel('');
+  closeSettings();
+  await disconnect();
+  log('Device forgotten', 'info');
+}
+
+async function pairNewDevice() {
+  closeSettings();
+  if (deviceId) await disconnect();
+  await connect();
+}
+
+function changeAppPassword() {
+  closeSettings();
+  const msg = storedPassword ? 'New password (leave empty to clear):' : 'Enter device password:';
+  document.getElementById('pwdMessage').textContent = msg;
+  document.getElementById('pwdInput').value = '';
+  document.getElementById('pwdModal').style.display = 'flex';
+  document.getElementById('pwdInput').focus();
+}
+
+async function setDevicePassword() {
+  closeSettings();
+  const newPwd = await promptPassword('New device password (empty to disable auth):');
+  if (newPwd === null) return;
+  try {
+    const res = await sendRpc('Shelly.SetAuth', { user: 'admin', pass: newPwd });
+    if (res.result !== undefined) {
+      storedPassword = newPwd || null;
+      await persistPassword(storedPassword);
+      log(newPwd ? 'Device password updated' : 'Device auth disabled', 'success');
+    } else if (res.error) {
+      log(`SetAuth error: ${res.error.message}`, 'error');
+    }
+  } catch (e) {
+    log(`SetAuth error: ${e.message}`, 'error');
+  }
+}
+
+// ── Password modal ────────────────────────────────────────────────────────────
+
+function promptPassword(message) {
+  return new Promise(resolve => {
+    pwdResolve = resolve;
+    document.getElementById('pwdMessage').textContent = message;
+    document.getElementById('pwdInput').value = '';
+    document.getElementById('pwdModal').style.display = 'flex';
+    document.getElementById('pwdInput').focus();
+  });
+}
+
+window.submitPassword = function () {
+  const val = document.getElementById('pwdInput').value.trim();
+  document.getElementById('pwdModal').style.display = 'none';
+
+  if (pwdResolve) {
+    // Auth challenge or setDevicePassword flow
+    pwdResolve(val || null);
+    pwdResolve = null;
+  } else {
+    // changeAppPassword flow (no resolver — update directly)
+    storedPassword = val || null;
+    persistPassword(storedPassword);
+    log(storedPassword ? 'Password saved to Keychain' : 'Password cleared', 'info');
+  }
+};
+
+window.cancelPassword = function () {
+  document.getElementById('pwdModal').style.display = 'none';
+  if (pwdResolve) { pwdResolve(null); pwdResolve = null; }
+};
+
+// ── Keychain ──────────────────────────────────────────────────────────────────
 
 async function loadKeychainPassword() {
   try {
     const { value } = await SecureStoragePlugin.get({ key: PWD_KEY });
-    if (value) { storedPassword = value; updateLockUI(); }
-  } catch { /* nothing stored yet */ }
+    if (value) storedPassword = value;
+  } catch {}
 }
 
 async function persistPassword(pwd) {
@@ -36,13 +259,7 @@ async function persistPassword(pwd) {
   } catch (e) { log(`Keychain error: ${e.message}`, 'warn'); }
 }
 
-// ── Authentication ────────────────────────────────────────────────────────────
-// Shelly Gen2+ RPC digest auth (simplified HTTP Digest, MD5-based).
-//
-// To enable auth on the device, run once while connected (no password yet):
-//   sendRpc('Shelly.SetAuth', { user: 'admin', pass: 'yourpassword' })
-// To disable:
-//   sendRpc('Shelly.SetAuth', { user: 'admin', pass: '' })
+// ── Auth (Shelly Gen3 SHA-256 digest) ────────────────────────────────────────
 
 async function sha256hex(str) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
@@ -55,23 +272,11 @@ async function computeAuth(realm, nonce, nc, password) {
   const nc_hex   = nc.toString(16).padStart(8, '0');
   const ha1      = await sha256hex(`${username}:${realm}:${password}`);
   const ha2      = await sha256hex('dummy_method:dummy_uri');
-  // RFC 2617 qop=auth: ha1:nonce:nc:cnonce:auth:ha2
   const response = await sha256hex(`${ha1}:${nonce}:${nc_hex}:${cnonce}:auth:${ha2}`);
   return { realm, username, nonce, cnonce, nc: nc_hex, response, algorithm: 'SHA-256' };
 }
 
-// Returns the password string, or null if the user cancelled.
-function promptPassword(message = 'Enter device password') {
-  return new Promise(resolve => {
-    pwdResolve = resolve;
-    document.getElementById('pwdMessage').textContent = message;
-    document.getElementById('pwdInput').value = '';
-    document.getElementById('pwdModal').style.display = 'flex';
-    document.getElementById('pwdInput').focus();
-  });
-}
-
-// ── BLE transport (raw send + poll response) ─────────────────────────────────
+// ── BLE transport ─────────────────────────────────────────────────────────────
 
 async function writeChar(charUUID, dataView) {
   try {
@@ -86,19 +291,16 @@ async function transport(payload) {
   log(`→ ${text}`, 'info');
   const bytes = new TextEncoder().encode(text);
 
-  // Signal request length to TX_CTL (4-byte big-endian)
   const lenView = new DataView(new ArrayBuffer(4));
   lenView.setUint32(0, bytes.length, false);
   await writeChar(TX_CTL_UUID, lenView);
   await delay(TX_DELAY);
 
-  // Write request data in ≤20-byte chunks to DATA
   for (let i = 0; i < bytes.length; i += CHUNK) {
     await writeChar(DATA_UUID, new DataView(bytes.slice(i, i + CHUNK).buffer));
     if (i + CHUNK < bytes.length) await delay(10);
   }
 
-  // Poll RX_CTL until device signals the response is ready
   const deadline = Date.now() + RPC_TIMEOUT;
   await delay(300);
 
@@ -116,7 +318,6 @@ async function transport(payload) {
     }
 
     if (respLen > 0 && respLen <= 65536) {
-      log(`← ${respLen} bytes incoming`, 'info');
       let rxBuf = new Uint8Array(0);
       const readDeadline = Date.now() + 3000;
 
@@ -124,7 +325,7 @@ async function transport(payload) {
         const dataVal = await BleClient.read(deviceId, SVC_UUID, DATA_UUID);
         const chunk   = new Uint8Array(dataVal.buffer, dataVal.byteOffset, dataVal.byteLength);
         if (chunk.length === 0) break;
-        const merged = new Uint8Array(rxBuf.length + chunk.length);
+        const merged  = new Uint8Array(rxBuf.length + chunk.length);
         merged.set(rxBuf);
         merged.set(chunk, rxBuf.length);
         rxBuf = merged;
@@ -150,20 +351,11 @@ async function sendRpc(method, params = {}) {
   busy = true;
 
   try {
-    // First attempt (without auth, or with cached password)
     const id      = nextId++;
     const payload = { id, src: 'shelly-app', method, params };
-    if (storedPassword) {
-      // We don't know realm/nonce yet; send without auth first so the device
-      // can challenge us if needed. If the device has auth enabled it will 401.
-      // Alternatively, if we already know the device accepts our password from
-      // a previous successful call, we still need the challenge nonce each time.
-    }
-
-    let response = await transport(payload);
+    let response  = await transport(payload);
 
     if (response.error?.code === 401) {
-      // Shelly Gen3 embeds the auth challenge as a JSON string in error.message
       let challenge = response.www_auth;
       if (!challenge && response.error?.message) {
         try { challenge = JSON.parse(response.error.message); } catch {}
@@ -173,14 +365,12 @@ async function sendRpc(method, params = {}) {
       const nonce = challenge?.nonce;
       const nc    = challenge?.nc ?? 1;
 
-      log(`← 401 realm="${realm}" nonce=${nonce}`, 'warn');
       if (!realm || nonce === undefined) throw new Error('Auth challenge missing realm/nonce');
 
       if (!storedPassword) {
         storedPassword = await promptPassword('Device is password-protected. Enter password:');
         if (!storedPassword) throw new Error('Authentication cancelled');
         await persistPassword(storedPassword);
-        updateLockUI();
       }
 
       const auth         = await computeAuth(realm, nonce, nc, storedPassword);
@@ -191,8 +381,7 @@ async function sendRpc(method, params = {}) {
       if (response.error?.code === 401) {
         storedPassword = null;
         await persistPassword(null);
-        updateLockUI();
-        throw new Error('Incorrect password. Tap the lock to try again.');
+        throw new Error('Incorrect password — update it in Settings.');
       }
     }
 
@@ -202,232 +391,13 @@ async function sendRpc(method, params = {}) {
   }
 }
 
-// ── High-level commands ───────────────────────────────────────────────────────
-
-async function setDevicePassword() {
-  const newPwd = await promptPassword('New device password (leave empty to disable auth):');
-  if (newPwd === null) return; // cancelled
-
-  try {
-    const res = await sendRpc('Shelly.SetAuth', { user: 'admin', pass: newPwd });
-    if (res.result !== undefined) {
-      storedPassword = newPwd || null;
-      await persistPassword(storedPassword);
-      updateLockUI();
-      log(newPwd ? 'Device auth enabled and password stored' : 'Device auth disabled', 'success');
-    } else if (res.error) {
-      log(`SetAuth error: ${res.error.message ?? JSON.stringify(res.error)}`, 'error');
-    }
-  } catch (e) {
-    log(`SetAuth error: ${e.message}`, 'error');
-  }
-}
-
-async function refreshStatus() {
-  if (busy) return;
-  try {
-    const sw = await sendRpc('Switch.GetStatus', { id: 0 });
-    if (sw.result !== undefined) {
-      setBadge('outputBadge', sw.result.output ? 'ON' : 'OFF', sw.result.output);
-    } else if (sw.error) {
-      log(`Switch.GetStatus: ${sw.error.message ?? JSON.stringify(sw.error)}`, 'warn');
-    }
-
-    const inp = await sendRpc('Input.GetStatus', { id: 0 });
-    if (inp.result !== undefined) {
-      setBadge('inputBadge', inp.result.state ? 'PRESSED' : 'RELEASED', inp.result.state);
-    } else if (inp.error) {
-      log(`Input.GetStatus: ${inp.error.message ?? JSON.stringify(inp.error)}`, 'warn');
-    }
-  } catch (e) {
-    log(`Refresh error: ${e.message}`, 'error');
-  }
-}
-
-async function setSwitch(on) {
-  if (busy) return;
-  try {
-    const res = await sendRpc('Switch.Set', { id: 0, on });
-    if (res.result !== undefined) {
-      log(`Relay turned ${on ? 'ON' : 'OFF'} (was ${res.result.was_on ? 'ON' : 'OFF'})`, 'success');
-      await refreshStatus();
-    } else if (res.error) {
-      log(`Switch.Set error: ${res.error.message ?? JSON.stringify(res.error)}`, 'error');
-    }
-  } catch (e) {
-    log(`Error: ${e.message}`, 'error');
-  }
-}
-
-async function toggleSwitch() {
-  if (busy) return;
-  try {
-    const res = await sendRpc('Switch.Toggle', { id: 0 });
-    if (res.result !== undefined) {
-      log('Relay toggled', 'success');
-      await refreshStatus();
-    } else if (res.error) {
-      log(`Switch.Toggle error: ${res.error.message ?? JSON.stringify(res.error)}`, 'error');
-    }
-  } catch (e) {
-    log(`Error: ${e.message}`, 'error');
-  }
-}
-
-// ── Connection ────────────────────────────────────────────────────────────────
-
-async function toggleConnect() {
-  if (deviceId) await disconnect();
-  else          await connect();
-}
-
-async function connect() {
-  setConnState('connecting', 'Initializing Bluetooth…');
-  document.getElementById('connectBtn').disabled = true;
-
-  try {
-    await BleClient.initialize();
-    setConnState('connecting', 'Scanning for Shelly devices…');
-
-    const device = await BleClient.requestDevice({ namePrefix: 'Shelly' });
-
-    setConnState('connecting', 'Connecting…');
-    await BleClient.connect(device.deviceId, onDisconnected);
-    deviceId = device.deviceId;
-
-    setConnState('connected', 'Connected');
-    document.getElementById('deviceSub').textContent = device.name ?? 'Unknown device';
-    document.getElementById('connectBtn').textContent = 'Disconnect';
-    document.getElementById('connectBtn').disabled    = false;
-    document.getElementById('statusCard').style.display  = 'block';
-    document.getElementById('controlCard').style.display = 'block';
-
-    log(`Connected to ${device.name ?? 'device'}`, 'success');
-    await refreshStatus();
-
-  } catch (e) {
-    log(`Connection failed: ${e.message}`, 'error');
-    setConnState('', 'Not connected');
-    document.getElementById('connectBtn').disabled = false;
-    deviceId = null;
-  }
-}
-
-async function disconnect() {
-  if (deviceId) {
-    try { await BleClient.disconnect(deviceId); } catch {}
-  }
-  onDisconnected();
-}
-
-function onDisconnected() {
-  stopAutoRefresh();
-  document.getElementById('autoRefresh').checked = false;
-  busy     = false;
-  deviceId = null;
-
-  setConnState('', 'Disconnected');
-  document.getElementById('connectBtn').textContent  = 'Connect';
-  document.getElementById('connectBtn').disabled     = false;
-  document.getElementById('deviceSub').textContent   = '';
-  document.getElementById('statusCard').style.display  = 'none';
-  document.getElementById('controlCard').style.display = 'none';
-  setBadge('outputBadge', '—', null);
-  setBadge('inputBadge',  '—', null);
-  log('Disconnected', 'warn');
-}
-
-// ── Auto-refresh ──────────────────────────────────────────────────────────────
-
-function toggleAutoRefresh() {
-  const on = document.getElementById('autoRefresh').checked;
-  if (on) autoTimer = setInterval(refreshStatus, 2000);
-  else    stopAutoRefresh();
-}
-
-function stopAutoRefresh() {
-  clearInterval(autoTimer);
-  autoTimer = null;
-}
-
-// ── Password modal handlers ───────────────────────────────────────────────────
-
-function openPasswordModal() {
-  // If a password is stored, let the user clear or change it
-  const message = storedPassword
-    ? 'Change password (leave empty to clear):'
-    : 'Enter device password:';
-  document.getElementById('pwdMessage').textContent = message;
-  document.getElementById('pwdInput').value = '';
-  document.getElementById('pwdModal').style.display = 'flex';
-  document.getElementById('pwdInput').focus();
-}
-
-window.submitPassword = function () {
-  const val = document.getElementById('pwdInput').value.trim();
-  document.getElementById('pwdModal').style.display = 'none';
-
-  if (pwdResolve) {
-    // Called from an auth challenge inside sendRpc
-    pwdResolve(val || null);
-    pwdResolve = null;
-  } else {
-    // Called from the lock button (proactive setup)
-    storedPassword = val || null;
-    persistPassword(storedPassword);
-    updateLockUI();
-    log(storedPassword ? 'Password saved to Keychain' : 'Password cleared', 'info');
-  }
-};
-
-window.cancelPassword = function () {
-  document.getElementById('pwdModal').style.display = 'none';
-  if (pwdResolve) {
-    pwdResolve(null);
-    pwdResolve = null;
-  }
-};
-
-// Allow Enter key in password field to submit
-document.addEventListener('DOMContentLoaded', () => {
-  loadKeychainPassword();
-  document.getElementById('pwdInput').addEventListener('keydown', e => {
-    if (e.key === 'Enter') window.submitPassword();
-    if (e.key === 'Escape') window.cancelPassword();
-  });
-});
-
-// ── UI helpers ────────────────────────────────────────────────────────────────
-
-function updateLockUI() {
-  const btn = document.getElementById('lockBtn');
-  if (storedPassword) {
-    btn.textContent = 'Auth: ON';
-    btn.classList.add('lock-on');
-  } else {
-    btn.textContent = 'Set Auth';
-    btn.classList.remove('lock-on');
-  }
-}
-
-function setConnState(cls, text) {
-  const dot = document.getElementById('dot');
-  dot.className = cls ? `dot ${cls}` : 'dot';
-  document.getElementById('connLabel').textContent = text;
-}
-
-function setBadge(id, text, on) {
-  const el = document.getElementById(id);
-  el.textContent = text;
-  el.className = on === true ? 'badge on' : on === false ? 'badge off' : 'badge unknown';
-}
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function log(msg, type = 'info') {
   const box = document.getElementById('logBox');
   const p   = document.createElement('p');
   p.className   = type;
-  const t = new Date().toLocaleTimeString([], { hour12: false });
-  p.textContent = `[${t}] ${msg}`;
+  p.textContent = `[${new Date().toLocaleTimeString([], { hour12: false })}] ${msg}`;
   box.appendChild(p);
   box.scrollTop = box.scrollHeight;
   while (box.children.length > 200) box.removeChild(box.firstChild);
@@ -435,11 +405,13 @@ function log(msg, type = 'info') {
 
 function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-// ── Expose to HTML onclick handlers ──────────────────────────────────────────
-window.toggleConnect     = toggleConnect;
-window.setSwitch         = setSwitch;
-window.toggleSwitch      = toggleSwitch;
-window.refreshStatus     = refreshStatus;
-window.toggleAutoRefresh = toggleAutoRefresh;
-window.openPasswordModal = openPasswordModal;
-window.setDevicePassword = setDevicePassword;
+// ── Expose to HTML ────────────────────────────────────────────────────────────
+window.handleGarageBtn    = handleGarageBtn;
+window.openSettings       = openSettings;
+window.closeSettings      = closeSettings;
+window.handleOverlayClick = handleOverlayClick;
+window.toggleLog          = toggleLog;
+window.forgetDevice       = forgetDevice;
+window.pairNewDevice      = pairNewDevice;
+window.changeAppPassword  = changeAppPassword;
+window.setDevicePassword  = setDevicePassword;
