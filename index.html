@@ -81,18 +81,30 @@
       --c-icon:   #22c55e;
       --c-label:  #e2e8f0;
     }
+    .garage-btn.processing {
+      --c-border: #22c55e;
+      --c-bg:     #081a10;
+      --c-glow:   rgba(34,197,94,0.35);
+      --c-icon:   #22c55e;
+      --c-label:  #86efac;
+      animation: pulse-glow-green 0.7s ease-in-out infinite;
+    }
     .garage-btn.triggered {
       --c-bg:   #0f3020;
-      --c-glow: rgba(34,197,94,0.45);
+      --c-glow: rgba(34,197,94,0.6);
       transform: scale(0.975);
     }
-    .garage-btn:active:not(.disconnected):not(.connecting) {
+    .garage-btn:active:not(.disconnected):not(.connecting):not(.processing) {
       transform: scale(0.97);
     }
 
     @keyframes pulse-glow {
       0%, 100% { box-shadow: 0 0 50px rgba(245,158,11,0.12); }
       50%       { box-shadow: 0 0 90px rgba(245,158,11,0.32); }
+    }
+    @keyframes pulse-glow-green {
+      0%, 100% { box-shadow: 0 0 60px rgba(34,197,94,0.25); }
+      50%       { box-shadow: 0 0 110px rgba(34,197,94,0.55); }
     }
 
     .garage-icon {

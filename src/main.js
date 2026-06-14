@@ -63,14 +63,38 @@ async function autoConnect(saved) {
   setBtnState('connecting', 'Connecting…');
   try {
     await BleClient.initialize();
-    await BleClient.connect(saved.id, onDisconnected);
-    deviceId = saved.id;
+    // Scan silently (no dialog) until the saved device is found, then connect
+    const foundId = await scanForDevice(saved.id, 15000);
+    await BleClient.connect(foundId, onDisconnected);
+    deviceId = foundId;
     setBtnState('connected', 'Tap to open · close');
     log(`Connected to ${saved.name}`, 'success');
   } catch {
-    log('Auto-connect failed — tap to retry', 'warn');
+    try { await BleClient.stopLEScan(); } catch {}
     setBtnState('disconnected', 'Tap to connect');
+    log('Not in range — tap to connect when nearby', 'warn');
   }
+}
+
+function scanForDevice(targetId, timeoutMs) {
+  return new Promise(async (resolve, reject) => {
+    const timer = setTimeout(async () => {
+      try { await BleClient.stopLEScan(); } catch {}
+      reject(new Error('timeout'));
+    }, timeoutMs);
+
+    try {
+      await BleClient.requestLEScan({ namePrefix: 'Shelly' }, async (result) => {
+        if (result.device.deviceId !== targetId) return;
+        clearTimeout(timer);
+        try { await BleClient.stopLEScan(); } catch {}
+        resolve(result.device.deviceId);
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      reject(e);
+    }
+  });
 }
 
 async function connect() {
@@ -120,23 +144,34 @@ async function handleGarageBtn() {
 
 async function triggerGarage() {
   if (busy) return;
-  flashBtn();
+
+  const btn = document.getElementById('garageBtn');
+  const lbl = document.getElementById('btnLabel');
+
+  // Show processing state immediately — held until device confirms
+  btn.className = 'garage-btn processing';
+  lbl.textContent = 'Opening…';
+
   try {
     const res = await sendRpc('Switch.Toggle', { id: 0 });
     if (res.result !== undefined) {
-      log('Triggered', 'success');
+      log('Relay triggered', 'success');
+      // Brief success flash, then back to connected
+      btn.className = 'garage-btn triggered';
+      setTimeout(() => {
+        btn.className = 'garage-btn connected';
+        lbl.textContent = 'Tap to open · close';
+      }, 500);
     } else if (res.error) {
       log(`Error: ${res.error.message}`, 'error');
+      btn.className = 'garage-btn connected';
+      lbl.textContent = 'Tap to open · close';
     }
   } catch (e) {
     log(`Error: ${e.message}`, 'error');
+    btn.className = 'garage-btn connected';
+    lbl.textContent = 'Tap to open · close';
   }
-}
-
-function flashBtn() {
-  const btn = document.getElementById('garageBtn');
-  btn.classList.add('triggered');
-  setTimeout(() => btn.classList.remove('triggered'), 400);
 }
 
 // ── UI state ──────────────────────────────────────────────────────────────────
